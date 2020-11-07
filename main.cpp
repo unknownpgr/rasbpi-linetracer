@@ -106,10 +106,11 @@ int main(void) {
     cap.read(org);
 
     // Preprocess
-    resize(org, org, sizeSmall);
-    rotate(org, org, ROTATE_180);
-    cvtColor(org, hsv, COLOR_BGR2HSV);
-    split(hsv, hsvSplit);
+    resize(org, org, sizeSmall);  // Reduce the image size for computation time.
+    rotate(org, org, ROTATE_180); // Rotate the image because my camera is
+                                  // attached upside-down.
+    cvtColor(org, hsv, COLOR_BGR2HSV); // Convert image to HSV
+    split(hsv, hsvSplit);              // Split the HSV image into channels.
 
     // Get lane mask
     bitwise_and((COLOR_MEAN - COLOR_RANGE) < hsvSplit[0],
