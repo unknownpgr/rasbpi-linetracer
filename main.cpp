@@ -47,7 +47,10 @@ void setVeloWheel(int pinGND, int pinSGN, float value)
     softPwmWrite(pinSGN, 0);
     delay(PUNCH_T);
   }
-  softPwmWrite(pinSGN, (int)(PWM_MAX * (1 - value)));
+  if (value > 1)
+    value = 1;
+  int pwm = (int)(PWM_MAX * (1 - value));
+  softPwmWrite(pinSGN, pwm);
 }
 
 // Set velocity of each wheel
@@ -69,9 +72,87 @@ int main(void)
   LOG("Open video");
   VideoCapture cap(0);
 
-  Mat img;
-  cap.read(img);
-  imwrite("test.jpg", img);
+  const int center = 30;
+  const int delta = 5;
+  const float gain = 3.5;
+  Mat org, hsv, mask, hsvSplit[3];
 
+  cap.read(org);
+
+  Size sizeOrg = org.size();
+  Size sizeSmall = Size(sizeOrg.width / 4, sizeOrg.height / 4);
+  int i, y, x, weightSum, positionSum;
+  float position, left, right, posBef;
+  char posBar[21];
+  posBar[20] = 0;
+  posBef = 0;
+  for (;;)
+  {
+    // Read image from camera
+    cap.read(org);
+
+    // Preprocess
+    resize(org, org, sizeSmall);
+    rotate(org, org, ROTATE_180);
+    cvtColor(org, hsv, COLOR_BGR2HSV);
+    split(hsv, hsvSplit);
+
+    // Get lane mask
+    bitwise_and((center - delta) < hsvSplit[0], hsvSplit[0] < (center + delta), mask);
+#if 0
+    imwrite("test.jpg", mask);
+    return 0;
+#endif
+
+    // Calculate lane position
+    weightSum = 0;
+    positionSum = 0;
+    for (y = sizeSmall.height * 2 / 3; y < sizeSmall.height; y++)
+    {
+      uchar *row = mask.ptr<uchar>(y);
+      for (x = 0; x < sizeSmall.width; x++)
+      {
+        weightSum += row[x];
+        positionSum += row[x] * x;
+      }
+    }
+    if (weightSum > 50)
+    {
+      position = positionSum * 1.f / weightSum;
+      position /= sizeSmall.width; // Normalize
+      position -= 0.5f;            // Remove bias
+      position *= gain;            // Gain
+      if (position > 0.98f)
+        position = 0.98f;
+      if (position < -0.98f)
+        position = -0.98f;
+    }
+
+    // posBef = position * 0.5f + posBef * 0.5f;
+    // position = posBef;
+
+    left = 0.7f * (1 + position);
+    right = 0.7f * (1 - position);
+
+#if 1
+    int intPos = (position + 1) * 10;
+    if (intPos < 0)
+      intPos = 0;
+    if (intPos > 19)
+      intPos = 19;
+    for (i = 0; i < 20; i++)
+    {
+      if (intPos == i)
+        posBar[i] = 'X';
+      else if (i == 10)
+        posBar[i] = '|';
+      else
+        posBar[i] = ' ';
+    }
+    printf("%s : %+2.2f\t%+2.2f\n", posBar, left, right);
+#endif
+
+    setVelo(left, right);
+  }
   return 0;
 }
