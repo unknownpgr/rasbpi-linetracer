@@ -1,0 +1,1 @@
+add_executable(main.o main.c)
