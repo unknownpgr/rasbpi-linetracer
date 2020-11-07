@@ -4,7 +4,7 @@
 
 int main(void)
 {
-  printf("Initialize pin\n");
+  printf("Release all pins\n");
 
   if (wiringPiSetup() == -1)
     return 1;

@@ -3,3 +3,5 @@ CMakeFiles/
 CMakeCache.txt
 Makefile
 *.o
+test.jpg
+.vscode/

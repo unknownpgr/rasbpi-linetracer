@@ -1,8 +1,11 @@
 #include "config.h"
 #include <math.h>
+#include <opencv2/opencv.hpp>
 #include <softPwm.h>
 #include <stdio.h>
 #include <wiringPi.h>
+
+using namespace cv;
 
 #define LOG(msg) printf(msg "\n");
 
@@ -63,16 +66,12 @@ int main(void)
   LOG("Initialize software pwm");
   init();
 
-  LOG("Wheel speed test");
-  for (;;)
-  {
-    for (float t = 0; t < 3.1415926535897932384626 * 2; t += 0.01)
-    {
-      float left = sin(t);
-      float right = cos(t);
-      setVelo(left, right);
-      delay(10);
-    }
-  }
+  LOG("Open video");
+  VideoCapture cap(0);
+
+  Mat img;
+  cap.read(img);
+  imwrite("test.jpg", img);
+
   return 0;
 }
