@@ -20,24 +20,6 @@ int main(void)
       PIN_R_B};
 
   for (int i = 0; i < 4; i++)
-    pinMode(pins[i], OUTPUT);
-
-  for (int i = 0;; i++)
-  {
-    i %= 4;
-    printf("Activate : pins[%d]=%d\n", i, pins[i]);
-    for (int j = 0; j < 4; j++)
-    {
-      if (i == j)
-      {
-        digitalWrite(pins[j], 0);
-      }
-      else
-      {
-        digitalWrite(pins[j], 1);
-      }
-    }
-    delay(1000);
-  }
+    pinMode(pins[i], INPUT);
   return 0;
 }
