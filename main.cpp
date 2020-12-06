@@ -12,17 +12,18 @@ using namespace cv;
 // Motor control
 #define PWM_MAX      128
 #define PUNCH_THRESH 0.5f
-#define PUNCH_T      2
+#define PUNCH_T      0
 
 // Image processing
 #define IMAGE_DOWNSIZE 4
-#define IMAGE_ROI      2 / 3
+#define IMAGE_ROI      0.8f
 #define COLOR_MEAN     30
 #define COLOR_RANGE    5
 
 // Drive control
-#define POS_GAIN  3.5f
-#define VELO_MAIN 0.7f
+#define POS_GAIN_P 2.5f
+#define POS_GAIN_I 0.01f
+#define VELO_MAIN  0.10f
 
 // Log / Debugging
 #define DEBUG_CAPTURE 0
@@ -93,7 +94,7 @@ int main(void) {
 
   // Variables for drive control
   int i, y, x, weightSum, positionSum;
-  float position, left, right, posBef;
+  float position, left, right, posBef, err_i, control;
 
   // Variables for debugging
   char posBar[21];
@@ -117,6 +118,15 @@ int main(void) {
                 hsvSplit[0] < (COLOR_MEAN + COLOR_RANGE), mask);
 
 #if DEBUG_CAPTURE
+    int counter = 0;
+    for (int y = sizeSmall.height * IMAGE_ROI; y < sizeSmall.height; y++) {
+      uchar *row = mask.ptr(y);
+      for (int x = 0; x < sizeSmall.width; x++) {
+        if (row[x] > 128)
+          counter++;
+      }
+    }
+    printf("White pixel : %d\n", counter);
     imwrite("test.jpg", mask);
     return 0;
 #endif
@@ -133,16 +143,19 @@ int main(void) {
     }
 
     // Update position only if there are significantly many lane pixels.
-    if (weightSum > 50) {
+    if (weightSum > 300) {
       position = positionSum * 1.f / weightSum; // Calculated weighted mean
       position /= sizeSmall.width;              // Normalize
       position -= 0.5f;                         // Remove bias
-      position *= POS_GAIN;                     // Apply gain
+      position *= POS_GAIN_P;                   // Apply gain
     }
 
+    err_i += position * POS_GAIN_I;
+    control = position + POS_GAIN_P + err_i;
+
     // Calculated wheel velocity from position
-    left = VELO_MAIN * (1 + position);
-    right = VELO_MAIN * (1 - position);
+    left = VELO_MAIN * (1 + control);
+    right = VELO_MAIN * (1 - control);
 
     // Apply wheel velocity
     setVelo(left, right);
@@ -161,7 +174,7 @@ int main(void) {
       else
         posBar[i] = ' ';
     }
-    printf("%s : %+2.2f\t%+2.2f\n", posBar, left, right);
+    printf("%s : %+2.2f\t%+2.2f\t%+2.2f\n", posBar, left, right, control);
 #endif
   }
 
