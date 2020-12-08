@@ -1,9 +1,11 @@
 #include "config.h"
 #include <math.h>
 #include <opencv2/opencv.hpp>
+#include <pthread.h>
 #include <softPwm.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <wiringPi.h>
 
 using namespace cv;
@@ -22,7 +24,7 @@ using namespace cv;
 #define COLOR_RANGE    5
 
 // Drive control
-#define POS_GAIN_P 2.5f
+#define POS_GAIN_P 3.0f
 #define POS_GAIN_I 0.00f
 #define VELO_MAIN  0.115f
 
@@ -52,23 +54,32 @@ void setVeloWheel(int pinBASE, int pinSGN, float value) {
   if (value > 1)
     value = 1;
 
-  int time_full = 100;
+  int time_full = 250 * 1000;
   int time_punch = time_full * value;
   int time_sleep = time_full - time_punch;
 
   // Set base pin to 1, because L9110s motordriver uses pull-up.
   softPwmWrite(pinBASE, PWM_MAX);
   softPwmWrite(pinSGN, 0);
-  delay(time_punch);
+  usleep(time_punch);
   softPwmWrite(pinSGN, PWM_MAX);
-  // delay(time_sleep);
 }
 
 // Set velocity of both wheels
 void setVelo(float left, float right) {
   setVeloWheel(PIN_L_A, PIN_L_B, left);
   setVeloWheel(PIN_R_A, PIN_R_B, right);
-  delay(70);
+  usleep(150 * 1000);
+}
+
+Mat org;
+VideoCapture cap;
+
+void *thread_imread(void *args) {
+  while (1) {
+    cap.read(org);
+    usleep(100);
+  }
 }
 
 int main(void) {
@@ -79,11 +90,11 @@ int main(void) {
   LOG("Initialize software pwm");
   init();
 
+  cap.open(0);
   LOG("Open video");
-  VideoCapture cap(0);
 
   // Variables for image processing
-  Mat org, small, crop, gray;
+  Mat small, crop, gray;
   cap.read(org);
   Size sizeOrg = org.size();
   Size sizeSmall =
@@ -103,6 +114,9 @@ int main(void) {
   char posBar[21];
   posBar[20] = 0;
   posBef = 0;
+
+  pthread_t tid;
+  pthread_create(&tid, NULL, thread_imread, (void *)&tid);
 
   LOG("Start linetracing");
   for (;;) {
@@ -129,13 +143,6 @@ int main(void) {
       }
     }
 
-    // for (y = 0; y < _h; y++) {
-    //   uchar *row = gray.ptr<uchar>(y);
-    //   row[positionSum / weightSum] = 0;
-    // }
-
-    imwrite("test.jpg", gray);
-
     // Update position only if there are significantly many lane pixels.
     if (weightSum > 300) {
       position = positionSum * 1.f / weightSum; // Calculated weighted mean
@@ -150,9 +157,6 @@ int main(void) {
     // Calculated wheel velocity from position
     left = VELO_MAIN * (1 + control);
     right = VELO_MAIN * (1 - control);
-
-    // Read image from camera
-    cap.read(org);
 
     // Apply wheel velocity
     setVelo(left, right);

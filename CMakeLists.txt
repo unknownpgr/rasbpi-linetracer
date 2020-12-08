@@ -9,7 +9,7 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 set(target main.o)
 
 add_executable(${target} main.cpp)
-target_link_libraries(${target} wiringPi m ${OpenCV_LIBS})
+target_link_libraries(${target} wiringPi m ${OpenCV_LIBS} pthread)
 
 add_executable(init.o init.c)
 target_link_libraries(init.o wiringPi)
