@@ -2,6 +2,7 @@
 #include <math.h>
 #include <opencv2/opencv.hpp>
 #include <softPwm.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <wiringPi.h>
 
@@ -21,9 +22,9 @@ using namespace cv;
 #define COLOR_RANGE    5
 
 // Drive control
-#define POS_GAIN_P 2.5f
-#define POS_GAIN_I 0.01f
-#define VELO_MAIN  0.10f
+#define POS_GAIN_P 1.1f
+#define POS_GAIN_I 0.00f
+#define VELO_MAIN  0.115f
 
 // Log / Debugging
 #define DEBUG_CAPTURE 0
@@ -41,6 +42,10 @@ void init() {
 
 // Set velocity of one wheel
 void setVeloWheel(int pinBASE, int pinSGN, float value) {
+  // int time_full = 100;
+  // int time_punch = 100 * value;
+  // int time_sleep = time_full - time_punch;
+
   // If value is minus, swap pin and use abs(value)
   if (value < 0) {
     int tmp = pinBASE;
@@ -86,15 +91,21 @@ int main(void) {
   VideoCapture cap(0);
 
   // Variables for image processing
-  Mat org, hsv, mask, hsvSplit[3];
+  Mat org, small, crop, gray;
   cap.read(org);
   Size sizeOrg = org.size();
   Size sizeSmall =
       Size(sizeOrg.width / IMAGE_DOWNSIZE, sizeOrg.height / IMAGE_DOWNSIZE);
+  int _roi = sizeSmall.height * IMAGE_ROI;
+  int _h = sizeSmall.height - _roi;
+  Rect ROI_RECT(0, _roi, sizeSmall.width, _h);
+
+  printf("ROI:%d\n", _roi);
 
   // Variables for drive control
-  int i, y, x, weightSum, positionSum;
-  float position, left, right, posBef, err_i, control;
+  int32_t weightSum, positionSum;
+  int i, y, x;
+  float position, left, right, posBef, err_i = 0, control;
 
   // Variables for debugging
   char posBar[21];
@@ -107,40 +118,34 @@ int main(void) {
     cap.read(org);
 
     // Preprocess
-    resize(org, org, sizeSmall);  // Reduce the image size for computation time.
-    rotate(org, org, ROTATE_180); // Rotate the image because my camera is
-                                  // attached upside-down.
-    cvtColor(org, hsv, COLOR_BGR2HSV); // Convert image to HSV
-    split(hsv, hsvSplit);              // Split the HSV image into channels.
-
-    // Get lane mask
-    bitwise_and((COLOR_MEAN - COLOR_RANGE) < hsvSplit[0],
-                hsvSplit[0] < (COLOR_MEAN + COLOR_RANGE), mask);
-
-#if DEBUG_CAPTURE
-    int counter = 0;
-    for (int y = sizeSmall.height * IMAGE_ROI; y < sizeSmall.height; y++) {
-      uchar *row = mask.ptr(y);
-      for (int x = 0; x < sizeSmall.width; x++) {
-        if (row[x] > 128)
-          counter++;
-      }
-    }
-    printf("White pixel : %d\n", counter);
-    imwrite("test.jpg", mask);
-    return 0;
-#endif
+    resize(org, small,
+           sizeSmall); // Reduce the image size for computation time.
+    rotate(small, small, ROTATE_180); // Rotate the image because my camera is
+    crop = small(ROI_RECT);           // attached upside-down.
+    cvtColor(crop, gray, COLOR_BGR2GRAY);
+    adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
+                      11, 25);
+    // threshold(gray, gray, 128, 255, THRESH_OTSU);
 
     // Calculate lane position (weighted sum of lane pixels)
     weightSum = 0;
     positionSum = 0;
-    for (y = sizeSmall.height * IMAGE_ROI; y < sizeSmall.height; y++) {
-      uchar *row = mask.ptr<uchar>(y);
+    for (y = 0; y < _h; y++) {
+      uchar *row = gray.ptr<uchar>(y);
       for (x = 0; x < sizeSmall.width; x++) {
-        weightSum += row[x];
-        positionSum += row[x] * x;
+        int value = 255 - row[x];
+        row[x] = value;
+        weightSum += value;
+        positionSum += value * x;
       }
     }
+
+    // for (y = 0; y < _h; y++) {
+    //   uchar *row = gray.ptr<uchar>(y);
+    //   row[positionSum / weightSum] = 0;
+    // }
+
+    imwrite("test.jpg", gray);
 
     // Update position only if there are significantly many lane pixels.
     if (weightSum > 300) {
@@ -151,7 +156,7 @@ int main(void) {
     }
 
     err_i += position * POS_GAIN_I;
-    control = position + POS_GAIN_P + err_i;
+    control = position;
 
     // Calculated wheel velocity from position
     left = VELO_MAIN * (1 + control);
