@@ -105,17 +105,18 @@ void *thread_imread(void *args) {
     rotate(small, small, ROTATE_180); // Rotate the image because my camera is
     crop = small(ROI_RECT);           // attached upside-down.
     cvtColor(crop, gray, COLOR_BGR2GRAY);
-    adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
-                      11, 25);
+    // adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
+    //                   11, 25);
+    threshold(gray, gray, 128, 255, THRESH_OTSU);
     imwrite("test.jpg", gray);
-    // threshold(gray, gray, 128, 255, THRESH_OTSU);
+    // exit(0);
 
     // Calculate lane position (weighted sum of lane pixels)
     weightSum = 0;
     positionSum = 0;
     for (y = 0; y < _h; y++) {
       uchar *row = gray.ptr<uchar>(y);
-      for (x = 0; x < sizeSmall.width; x++) {
+      for (x = 0; x < sizeSmall.width * 3 / 4; x++) {
         int value = 255 - row[x];
         row[x] = value;
         weightSum += value;
