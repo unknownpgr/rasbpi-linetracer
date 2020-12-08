@@ -1,37 +1,38 @@
-import os
 import cv2
-from keras.models import Sequential
-from keras.layers import Dense
+from keras.models import *
+from keras.layers import *
 import numpy as np
 import tensorflow as tf
+from dataExtractor import getData
 
-trX = []; trY = []
+trX, trY = getData()
 
-for name in os.listdir('./resized'):
-    path = './resized/' + name
-    img = cv2.imread(path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    ret, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-    binary = np.array(binary,np.float32)/255
-    trX.append(binary.reshape(binary.shape[0] * binary.shape[1]))
-    tokens = name.split('_')
-    posNoise = float(tokens[0])
-    trY.append(posNoise)
-    # angleNoise = float(tokens[1][:-4])
-
-trX = np.array(trX)
-trY = np.array(trY)
+print(trX.shape)
+print(trY.shape)
+print(trX[0].shape)
 
 seed = 0
 np.random.seed(seed)
 tf.random.set_seed(seed)
 
 model = Sequential()
-model.add(Dense(512, input_dim = trX[0].shape[0], activation = 'relu'))
-model.add(Dense(64, activation = 'relu'))
+model.add(Conv2D(32, (3, 3), input_shape=(trX[0].shape), activation='relu'))
+model.add(Dropout(0.25))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Dropout(0.25))
+model.add(MaxPooling2D(pool_size=2))
+model.add(Dropout(0.25))
+model.add(Flatten())
+model.add(Dense(512))
+model.add(Activation('relu'))
+model.add(Dropout(0.25))
+model.add(Dense(64))
+model.add(Activation('relu'))
+model.add(Dropout(0.25))
 model.add(Dense(1))
+model.add(Activation('tanh'))
 
 model.compile(loss='mean_squared_error', optimizer='adam')
-model.fit(trX, trY, epochs=2, batch_size=1)
+model.fit(trX, trY, epochs=20, batch_size=50)
 
 model.save('./fitted')
