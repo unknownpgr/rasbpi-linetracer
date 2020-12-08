@@ -54,7 +54,7 @@ void setVeloWheel(int pinBASE, int pinSGN, float value) {
   if (value > 1)
     value = 1;
 
-  int time_full = 250 * 1000;
+  int time_full = 200 * 1000;
   int time_punch = time_full * value;
   int time_sleep = time_full - time_punch;
 
@@ -72,63 +72,43 @@ void setVelo(float left, float right) {
   usleep(150 * 1000);
 }
 
-Mat org;
-VideoCapture cap;
+float position;
 
 void *thread_imread(void *args) {
-  while (1) {
-    cap.read(org);
-    usleep(100);
-  }
-}
 
-int main(void) {
-  LOG("Check wiringPi setup");
-  if (wiringPiSetup() == -1)
-    return 1;
-
-  LOG("Initialize software pwm");
-  init();
-
+  VideoCapture cap;
   cap.open(0);
-  LOG("Open video");
 
-  // Variables for image processing
-  Mat small, crop, gray;
+  Mat org, small, crop, gray;
   cap.read(org);
   Size sizeOrg = org.size();
   Size sizeSmall =
       Size(sizeOrg.width / IMAGE_DOWNSIZE, sizeOrg.height / IMAGE_DOWNSIZE);
   int _roi = sizeSmall.height * IMAGE_ROI;
   int _h = sizeSmall.height - _roi;
-  Rect ROI_RECT(0, _roi, sizeSmall.width, _h);
+  int x, y;
+  int _roi_x = 0;
+  Rect ROI_RECT(_roi_x, _roi, sizeSmall.width - _roi_x * 2, _h);
 
   printf("ROI:%d\n", _roi);
 
+  LOG("Open video");
+
   // Variables for drive control
   int32_t weightSum, positionSum;
-  int i, y, x;
-  float position, left, right, posBef, err_i = 0, control;
 
-  // Variables for debugging
-  char posBar[21];
-  posBar[20] = 0;
-  posBef = 0;
-
-  pthread_t tid;
-  pthread_create(&tid, NULL, thread_imread, (void *)&tid);
-
-  LOG("Start linetracing");
-  for (;;) {
+  while (1) {
+    cap.read(org);
     // Preprocess
     resize(org, small,
            sizeSmall); // Reduce the image size for computation time.
     rotate(small, small, ROTATE_180); // Rotate the image because my camera is
     crop = small(ROI_RECT);           // attached upside-down.
     cvtColor(crop, gray, COLOR_BGR2GRAY);
-    // adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
-    //                   11, 25);
-    threshold(gray, gray, 128, 255, THRESH_OTSU);
+    adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
+                      11, 25);
+    imwrite("test.jpg", gray);
+    // threshold(gray, gray, 128, 255, THRESH_OTSU);
 
     // Calculate lane position (weighted sum of lane pixels)
     weightSum = 0;
@@ -150,7 +130,30 @@ int main(void) {
       position -= 0.5f;                         // Remove bias
       position *= POS_GAIN_P;                   // Apply gain
     }
+  }
+}
 
+int main(void) {
+  LOG("Check wiringPi setup");
+  if (wiringPiSetup() == -1)
+    return 1;
+
+  LOG("Initialize software pwm");
+  init();
+
+  int i, y, x;
+  float left, right, posBef, err_i = 0, control;
+
+  // Variables for debugging
+  char posBar[21];
+  posBar[20] = 0;
+  posBef = 0;
+
+  pthread_t tid;
+  pthread_create(&tid, NULL, thread_imread, (void *)&tid);
+
+  LOG("Start linetracing");
+  for (;;) {
     err_i += position * POS_GAIN_I;
     control = position;
 
