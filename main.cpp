@@ -22,7 +22,7 @@ using namespace cv;
 #define COLOR_RANGE    5
 
 // Drive control
-#define POS_GAIN_P 1.1f
+#define POS_GAIN_P 2.5f
 #define POS_GAIN_I 0.00f
 #define VELO_MAIN  0.115f
 
@@ -42,10 +42,6 @@ void init() {
 
 // Set velocity of one wheel
 void setVeloWheel(int pinBASE, int pinSGN, float value) {
-  // int time_full = 100;
-  // int time_punch = 100 * value;
-  // int time_sleep = time_full - time_punch;
-
   // If value is minus, swap pin and use abs(value)
   if (value < 0) {
     int tmp = pinBASE;
@@ -53,30 +49,26 @@ void setVeloWheel(int pinBASE, int pinSGN, float value) {
     pinSGN = tmp;
     value = -value;
   }
+  if (value > 1)
+    value = 1;
+
+  int time_full = 100;
+  int time_punch = time_full * value;
+  int time_sleep = time_full - time_punch;
 
   // Set base pin to 1, because L9110s motordriver uses pull-up.
   softPwmWrite(pinBASE, PWM_MAX);
-
-  // If value is too small, punch.
-  if (value < PUNCH_THRESH) {
-    softPwmWrite(pinSGN, 0);
-    delay(PUNCH_T);
-  }
-
-  // Calculate pwm (we inverse the value because the signal is 0, not 1.)
-  int pwm = (int)(PWM_MAX * (1 - value));
-  if (pwm > PWM_MAX) {
-    pwm = PWM_MAX;
-  }
-
-  // Apply pwm
-  softPwmWrite(pinSGN, pwm);
+  softPwmWrite(pinSGN, 0);
+  delay(time_punch);
+  softPwmWrite(pinSGN, PWM_MAX);
+  // delay(time_sleep);
 }
 
 // Set velocity of both wheels
 void setVelo(float left, float right) {
   setVeloWheel(PIN_L_A, PIN_L_B, left);
   setVeloWheel(PIN_R_A, PIN_R_B, right);
+  delay(70);
 }
 
 int main(void) {
@@ -114,18 +106,15 @@ int main(void) {
 
   LOG("Start linetracing");
   for (;;) {
-    // Read image from camera
-    cap.read(org);
-
     // Preprocess
     resize(org, small,
            sizeSmall); // Reduce the image size for computation time.
     rotate(small, small, ROTATE_180); // Rotate the image because my camera is
     crop = small(ROI_RECT);           // attached upside-down.
     cvtColor(crop, gray, COLOR_BGR2GRAY);
-    adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
-                      11, 25);
-    // threshold(gray, gray, 128, 255, THRESH_OTSU);
+    // adaptiveThreshold(gray, gray, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY,
+    //                   11, 25);
+    threshold(gray, gray, 128, 255, THRESH_OTSU);
 
     // Calculate lane position (weighted sum of lane pixels)
     weightSum = 0;
@@ -161,6 +150,9 @@ int main(void) {
     // Calculated wheel velocity from position
     left = VELO_MAIN * (1 + control);
     right = VELO_MAIN * (1 - control);
+
+    // Read image from camera
+    cap.read(org);
 
     // Apply wheel velocity
     setVelo(left, right);
