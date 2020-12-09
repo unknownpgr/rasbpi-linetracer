@@ -11,6 +11,7 @@
 using namespace cv;
 
 #define LOG(msg) printf(msg "\n");
+#define ABS(x)   (((x) > 0) ? (x) : (-(x)))
 
 // Motor control
 #define PWM_MAX      128
@@ -24,13 +25,14 @@ using namespace cv;
 #define COLOR_RANGE    5
 
 // Drive control
-#define POS_GAIN_P 3.0f
-#define POS_GAIN_I 0.00f
-#define VELO_MAIN  0.115f
+#define POS_GAIN_P  2.0f
+#define POS_GAIN_I  0.00f
+#define VELO_MAIN   0.135f
+#define CURV_DECCEL 0.25f
 
 // Log / Debugging
 #define DEBUG_CAPTURE 0
-#define DEBUG_LOG     1
+#define DEBUG_LOG     0
 
 int pins[4] = {PIN_L_A, PIN_L_B, PIN_R_A, PIN_R_B};
 
@@ -51,25 +53,25 @@ void setVeloWheel(int pinBASE, int pinSGN, float value) {
     pinSGN = tmp;
     value = -value;
   }
-  if (value > 1)
-    value = 1;
-
-  int time_full = 200 * 1000;
-  int time_punch = time_full * value;
-  int time_sleep = time_full - time_punch;
 
   // Set base pin to 1, because L9110s motordriver uses pull-up.
   softPwmWrite(pinBASE, PWM_MAX);
-  softPwmWrite(pinSGN, 0);
-  usleep(time_punch);
-  softPwmWrite(pinSGN, PWM_MAX);
+
+  // Calculate pwm (we inverse the value because the signal is 0, not 1.)
+  int pwm = (int)(PWM_MAX * (1 - value));
+  if (pwm > PWM_MAX) {
+    pwm = PWM_MAX;
+  }
+
+  // Apply pwm
+  softPwmWrite(pinSGN, pwm);
 }
 
 // Set velocity of both wheels
 void setVelo(float left, float right) {
   setVeloWheel(PIN_L_A, PIN_L_B, left);
   setVeloWheel(PIN_R_A, PIN_R_B, right);
-  usleep(150 * 1000);
+  usleep(10 * 1000);
 }
 
 float position;
@@ -96,6 +98,7 @@ void *thread_imread(void *args) {
 
   // Variables for drive control
   int32_t weightSum, positionSum;
+  float tempPos;
 
   while (1) {
     cap.read(org);
@@ -116,7 +119,7 @@ void *thread_imread(void *args) {
     positionSum = 0;
     for (y = 0; y < _h; y++) {
       uchar *row = gray.ptr<uchar>(y);
-      for (x = 0; x < sizeSmall.width * 3 / 4; x++) {
+      for (x = 0; x < sizeSmall.width; x++) {
         int value = 255 - row[x];
         row[x] = value;
         weightSum += value;
@@ -125,11 +128,12 @@ void *thread_imread(void *args) {
     }
 
     // Update position only if there are significantly many lane pixels.
-    if (weightSum > 300) {
-      position = positionSum * 1.f / weightSum; // Calculated weighted mean
-      position /= sizeSmall.width;              // Normalize
-      position -= 0.5f;                         // Remove bias
-      position *= POS_GAIN_P;                   // Apply gain
+    if (weightSum > 100) {
+      tempPos = positionSum * 1.f / weightSum; // Calculated weighted mean
+      tempPos /= sizeSmall.width;              // Normalize
+      tempPos -= 0.5f;                         // Remove bias
+      tempPos *= POS_GAIN_P;                   // Apply gain
+      position = tempPos;
     }
   }
 }
@@ -155,12 +159,13 @@ int main(void) {
 
   LOG("Start linetracing");
   for (;;) {
-    err_i += position * POS_GAIN_I;
     control = position;
 
     // Calculated wheel velocity from position
-    left = VELO_MAIN * (1 + control);
-    right = VELO_MAIN * (1 - control);
+    static float veloMain;
+    veloMain = VELO_MAIN / (1 + ABS(control) * CURV_DECCEL);
+    left = veloMain * (1 + control);
+    right = veloMain * (1 - control);
 
     // Apply wheel velocity
     setVelo(left, right);
